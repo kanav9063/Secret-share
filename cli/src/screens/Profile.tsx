@@ -43,7 +43,7 @@ export function ProfileScreen({ onBack }: { onBack: () => void }) {
   if (loading) {
     return (
       <Box flexDirection="column">
-        <Text color="cyan" bold>👤 My Profile</Text>
+        <Text color="cyan" bold>USER PROFILE</Text>
         <Text> </Text>
         <Text color="cyan"><Spinner type="dots" /> Loading profile...</Text>
       </Box>
@@ -54,12 +54,12 @@ export function ProfileScreen({ onBack }: { onBack: () => void }) {
   if (error || !userInfo) {
     return (
       <Box flexDirection="column">
-        <Text color="cyan" bold>👤 My Profile</Text>
+        <Text color="cyan" bold>USER PROFILE</Text>
         <Text> </Text>
-        <Text color="red">⚠️ {error || 'Failed to load profile'}</Text>
+        <Text color="red">[ERROR] {error || 'Failed to load profile'}</Text>
         <Text> </Text>
         <SelectInput
-          items={[{ label: '← Back to Main Menu', value: 'back' }]}
+          items={[{ label: 'Back to Main Menu', value: 'back' }]}
           onSelect={() => onBack()}
         />
       </Box>
@@ -67,18 +67,20 @@ export function ProfileScreen({ onBack }: { onBack: () => void }) {
   }
 
   // Menu items for navigation
-  const items = [{ label: '← Back to Main Menu', value: 'back' }];
+  const items = [{ label: 'Back to Main Menu', value: 'back' }];
 
   // Main profile display
   return (
     <Box flexDirection="column">
-      <Text color="cyan" bold>👤 My Profile</Text>
+      <Box borderStyle="single" borderColor="cyan" paddingX={1}>
+        <Text color="cyan" bold>USER PROFILE</Text>
+      </Box>
       <Text> </Text>
       
       {/* User Information Section */}
       <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1}>
-        <Text bold color="yellow">User Information</Text>
-        <Text>─────────────────</Text>
+        <Text bold>USER INFORMATION</Text>
+        <Text>───────────────────────────────────────</Text>
         <Box>
           <Text color="gray">Name: </Text>
           <Text>{userInfo.user.name}</Text>
@@ -90,8 +92,12 @@ export function ProfileScreen({ onBack }: { onBack: () => void }) {
         <Box>
           <Text color="gray">Role: </Text>
           <Text color={userInfo.user.is_admin ? "green" : "cyan"}>
-            {userInfo.user.is_admin ? '🔑 Administrator' : '👤 Regular User'}
+            {userInfo.user.is_admin ? 'Administrator' : 'Regular User'}
           </Text>
+        </Box>
+        <Box>
+          <Text color="gray">Status: </Text>
+          <Text color="green">✓ Active</Text>
         </Box>
       </Box>
       
@@ -99,8 +105,8 @@ export function ProfileScreen({ onBack }: { onBack: () => void }) {
       
       {/* Organization Section */}
       <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1}>
-        <Text bold color="yellow">Organization</Text>
-        <Text>─────────────</Text>
+        <Text bold>ORGANIZATION</Text>
+        <Text>───────────────────────────────────────</Text>
         <Box>
           <Text color="gray">Name: </Text>
           <Text>{userInfo.organization?.name || 'No organization'}</Text>
@@ -117,8 +123,8 @@ export function ProfileScreen({ onBack }: { onBack: () => void }) {
       
       {/* Teams Section */}
       <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1}>
-        <Text bold color="yellow">Team Memberships ({userInfo.teams.length})</Text>
-        <Text>──────────────────</Text>
+        <Text bold>TEAM MEMBERSHIPS ({userInfo.teams.length})</Text>
+        <Text>───────────────────────────────────────</Text>
         {userInfo.teams.length === 0 ? (
           <Text color="gray">Not a member of any teams</Text>
         ) : (
@@ -138,8 +144,8 @@ export function ProfileScreen({ onBack }: { onBack: () => void }) {
       {userInfo.user.is_admin && (
         <>
           <Box borderStyle="single" borderColor="green" paddingX={1}>
-            <Text color="green" bold>🔑 Admin Privileges Active</Text>
-            <Text color="gray">You have full access to admin operations</Text>
+            <Text color="green" bold>⚡ ADMIN Privileges Active</Text>
+            <Text color="gray">Full access to administrative operations</Text>
           </Box>
           <Text> </Text>
         </>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text, useInput } from 'ink';
 import SelectInput from 'ink-select-input';
 import TextInput from 'ink-text-input';
 import Spinner from 'ink-spinner';
@@ -33,6 +33,26 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
   // Feedback messages
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+
+  // Handle ESC key to go back
+  useInput((input, key) => {
+    if (key.escape) {
+      if (mode === 'create-user') {
+        if (step > 0) {
+          setStep(step - 1);
+        } else {
+          setMode('menu');
+          setNewUserEmail('');
+          setNewUserName('');
+        }
+      } else if (mode === 'create-team') {
+        setMode('menu');
+        setNewTeamName('');
+      } else if (mode === 'manage-users' || mode === 'manage-teams') {
+        setMode('menu');
+      }
+    }
+  });
 
   // Load users and teams on mount
   useEffect(() => {
@@ -160,10 +180,12 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
   if (mode === 'create-user' && step === 0) {
     return (
       <Box flexDirection="column">
-        <Text bold color="cyan">🔑 Create New User</Text>
-        <Text color="gray">Step 1 of 3</Text>
+        <Box borderStyle="single" borderColor="cyan" paddingX={1}>
+          <Text bold>CREATE NEW USER - Step 1/3</Text>
+        </Box>
         <Box marginTop={1}>
           <Text>Enter email address:</Text>
+          <Text color="gray">Press ESC to cancel</Text>
         </Box>
         <TextInput
           value={newUserEmail}
@@ -187,11 +209,13 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
   if (mode === 'create-user' && step === 1) {
     return (
       <Box flexDirection="column">
-        <Text bold color="cyan">🔑 Create New User</Text>
-        <Text color="gray">Step 2 of 3</Text>
+        <Box borderStyle="single" borderColor="cyan" paddingX={1}>
+          <Text bold>CREATE NEW USER - Step 2/3</Text>
+        </Box>
         <Text>Email: {newUserEmail}</Text>
         <Box marginTop={1}>
           <Text>Enter full name:</Text>
+          <Text color="gray">Press ESC to go back</Text>
         </Box>
         <TextInput
           value={newUserName}
@@ -214,23 +238,30 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
   if (mode === 'create-user' && step === 2) {
     const items = [
       { label: 'Regular User', value: 'regular' },
-      { label: 'Admin User', value: 'admin' }
+      { label: 'Admin User', value: 'admin' },
+      { label: '← Back', value: 'back' }
     ];
 
     return (
       <Box flexDirection="column">
-        <Text bold color="cyan">🔑 Create New User</Text>
-        <Text color="gray">Step 3 of 3</Text>
+        <Box borderStyle="single" borderColor="cyan" paddingX={1}>
+          <Text bold>CREATE NEW USER - Step 3/3</Text>
+        </Box>
         <Text>Email: {newUserEmail}</Text>
         <Text>Name: {newUserName}</Text>
         <Box marginTop={1}>
           <Text>Select user role:</Text>
+          <Text color="gray">Press ESC to go back</Text>
         </Box>
         <SelectInput
           items={items}
           onSelect={(item) => {
-            setNewUserIsAdmin(item.value === 'admin');
-            createUser();
+            if (item.value === 'back') {
+              setStep(1);
+            } else {
+              setNewUserIsAdmin(item.value === 'admin');
+              createUser();
+            }
           }}
         />
       </Box>
@@ -241,9 +272,12 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
   if (mode === 'create-team') {
     return (
       <Box flexDirection="column">
-        <Text bold color="cyan">👥 Create New Team</Text>
+        <Box borderStyle="single" borderColor="cyan" paddingX={1}>
+          <Text bold>CREATE NEW TEAM</Text>
+        </Box>
         <Box marginTop={1}>
           <Text>Enter team name:</Text>
+          <Text color="gray">Press ESC to cancel</Text>
         </Box>
         <TextInput
           value={newTeamName}
@@ -407,17 +441,21 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
   const menuItems = [
     { label: '👤 Create User', value: 'create-user' },
     { label: '👥 Create Team', value: 'create-team' },
-    { label: '⚙️ Manage Users', value: 'manage-users' },
-    { label: '⚙️ Manage Teams', value: 'manage-teams' },
-    { label: '← Back to Main Menu', value: 'back' }
+    { label: '📋 Manage Users', value: 'manage-users' },
+    { label: '📋 Manage Teams', value: 'manage-teams' },
+    { label: '──────────────────', value: 'divider' },
+    { label: '↩ Back to Main Menu', value: 'back' }
   ];
 
   return (
     <Box flexDirection="column">
-      <Text bold color="cyan">🔑 Admin Panel</Text>
-      <Text color="gray">Administrative operations</Text>
+      <Box borderStyle="single" borderColor="cyan" paddingX={1}>
+        <Text bold color="cyan">ADMINISTRATION</Text>
+      </Box>
+      <Text> </Text>
+      <Text>Select operation:</Text>
       {message && <Text color="green">✓ {message}</Text>}
-      {error && <Text color="red">✗ {error}</Text>}
+      {error && <Text color="red">[ERROR] {error}</Text>}
       <Box marginTop={1}>
         <SelectInput
           items={menuItems}
@@ -426,7 +464,9 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
             setMessage('');
             setError('');
             
-            if (item.value === 'back') {
+            if (item.value === 'divider') {
+              return;
+            } else if (item.value === 'back') {
               onBack();
             } else if (item.value === 'create-user') {
               setMode('create-user');

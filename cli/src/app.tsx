@@ -100,7 +100,7 @@ const SecretsScreen = ({
       } else if (response.status === 401) {
         setError("Authentication failed. Please login again.");
       } else {
-        setError("Failed to fetch secrets");
+        setError("[ERROR] Unable to retrieve secrets");
       }
     } catch (err) {
       // 4d. Handle network errors
@@ -183,7 +183,7 @@ const SecretsScreen = ({
         setCreateStep("key");
         await fetchSecrets(); // Refresh the list
       } else {
-        setError("Failed to create secret");
+        setError("[ERROR] Unable to create secret");
       }
     } catch (err) {
       setError("Network error");
@@ -211,7 +211,7 @@ const SecretsScreen = ({
       } else if (response.status === 403) {
         setError("You can only delete secrets you created");
       } else {
-        setError("Failed to delete secret");
+        setError("[ERROR] Unable to delete secret");
       }
     } catch (err) {
       setError("Network error");
@@ -290,8 +290,8 @@ const SecretsScreen = ({
           📝 Secrets
         </Text>
         <Text> </Text>
-        <Text>
-          <Spinner type="dots" /> Loading secrets...
+        <Text color="cyan">
+          <Spinner type="dots" /> Loading...
         </Text>
       </Box>
     );
@@ -305,7 +305,7 @@ const SecretsScreen = ({
           📝 Secrets
         </Text>
         <Text> </Text>
-        <Text color="red">Error: {error}</Text>
+        <Text color="red">[ERROR] {error}</Text>
         <Text> </Text>
         <Text color="gray">Press 'q' to go back</Text>
       </Box>
@@ -439,7 +439,7 @@ const SecretsScreen = ({
 
       {secrets.length === 0 ? (
         // 10a. Show message if no secrets exist
-        <Text color="gray">No secrets yet. Press 'c' to create one.</Text>
+        <Text color="gray">No secrets found. Press 'c' to create.</Text>
       ) : (
         // 10b. Show enhanced table of secrets with sharing info
         <Box flexDirection="column">
@@ -556,22 +556,25 @@ const App = () => {
   // 2. Menu options - Phase 4: Added profile and admin options
   const menuItems = user
     ? [
-        { label: "👤 My Profile", value: "profile", key: "profile" },  // Phase 4: Profile
-        { label: "🔐 Secrets", value: "secrets", key: "secrets" },
+        { label: "👤 Profile", value: "profile", key: "profile" },  // Phase 4: Profile
+        { label: "🔐 Secrets Management", value: "secrets", key: "secrets" },
         { label: "👥 Teams", value: "teams", key: "teams" },  // Phase 3D: Teams option
-        ...(user.is_admin ? [{ label: "🔑 Admin Panel", value: "admin", key: "admin" }] : []),  // Phase 4: Admin only
-        { label: "🚪 Logout", value: "logout", key: "logout" },
-        { label: "❌ Exit", value: "exit", key: "exit" },
+        ...(user.is_admin ? [{ label: "⚡ Admin Panel", value: "admin", key: "admin" }] : []),  // Phase 4: Admin only
+        { label: "──────────────", value: "divider", key: "divider" },
+        { label: "↩ Logout", value: "logout", key: "logout" },
+        { label: "✕ Exit", value: "exit", key: "exit" },
       ]
     : [
-        { label: "🔐 Login with GitHub", value: "login", key: "login" },
-        { label: "📝 View Secrets", value: "secrets", key: "secrets" },
-        { label: "❌ Exit", value: "exit", key: "exit" },
+        { label: "Login with GitHub", value: "login", key: "login" },
+        { label: "View Secrets (Read-only)", value: "secrets", key: "secrets" },
+        { label: "Exit", value: "exit", key: "exit" },
       ];
 
   // 3. Handle menu selection
   const handleSelect = (item: any) => {
-    if (item.value === "exit") {
+    if (item.value === "divider") {
+      return; // Ignore divider selection
+    } else if (item.value === "exit") {
       process.exit(0);
     } else if (item.value === "login") {
       setScreen("login");
@@ -619,7 +622,7 @@ const App = () => {
       pollForToken(cliToken);
     } catch (error) {
       setLoginStatus("error");
-      console.error("Failed to start OAuth:", error);
+      console.error("[ERROR] OAuth initialization failed:", error);
     }
   };
 
@@ -662,14 +665,19 @@ const App = () => {
   if (screen === "menu") {
     return (
       <Box flexDirection="column">
-        <Text color="cyan" bold>
-          🔐 Secret Sharing CLI
-        </Text>
+        <Box borderStyle="double" borderColor="cyan" paddingX={1}>
+          <Text color="cyan" bold>
+            SECRET SHARING SYSTEM v1.0
+          </Text>
+        </Box>
+        <Text> </Text>
         {user && (
-          <Text color="green">Logged in as: {user.name || user.login}</Text>
+          <Text color="gray">
+            Authenticated as: {user.name || user.login}
+          </Text>
         )}
         <Text> </Text>
-        <Text>Choose an option:</Text>
+        <Text>Select an option:</Text>
         <SelectInput items={menuItems} onSelect={handleSelect} />
       </Box>
     );
@@ -741,8 +749,8 @@ const App = () => {
   if (screen === "logout") {
     return (
       <Box flexDirection="column">
-        <Text color="yellow">👋 Logging out...</Text>
-        <Text color="gray">Returning to menu...</Text>
+        <Text color="yellow">Terminating session...</Text>
+        <Text color="gray">Returning to menu</Text>
       </Box>
     );
   }
