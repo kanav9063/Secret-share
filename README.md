@@ -1,8 +1,3 @@
----
-noteId: "30c099a08d6411f08b2675fee6e4b94e"
-tags: []
-
----
 
 # SecretShare
 
@@ -27,8 +22,6 @@ Secret sharing system with:
 
 ## Architecture
 
-### System Overview
-High-level component architecture showing the interactions between CLI, FastAPI backend, SQLite database, and GitHub OAuth. This diagram provides a quick understanding of the system's main components and how they communicate, useful for understanding the overall architecture before diving into specific flows.
 
 ```mermaid
 graph TD
@@ -45,6 +38,10 @@ graph TD
         I --> J[CLI Polling]
     end
 ```
+
+### System Overview
+High-level component architecture showing the interactions between CLI, FastAPI backend, SQLite database, and GitHub OAuth. This diagram provides a quick understanding of the system's main components and how they communicate, useful for understanding the overall architecture before diving into specific flows.
+
 
 ### Authentication Flow Diagram
 Shows the complete OAuth2 flow from CLI to GitHub and back. This diagram illustrates how we achieve seamless browser-based authentication without requiring users to copy/paste tokens, fulfilling the assignment's requirement for frictionless social login. The CLI generates a unique token, opens the browser, and polls for the JWT after GitHub authorization completes.
