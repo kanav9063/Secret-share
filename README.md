@@ -1,3 +1,8 @@
+---
+noteId: "30c099a08d6411f08b2675fee6e4b94e"
+tags: []
+
+---
 
 # SecretShare
 
@@ -22,143 +27,25 @@ Secret sharing system with:
 
 ## Architecture
 
-
-```mermaid
-graph TD
-    A[CLI Client] --> B[FastAPI Backend]
-    B --> C[SQLite Database]
-    B --> D[GitHub OAuth]
-    A --> E[Browser] --> D
-    D --> B
-    
-    subgraph "Authentication Flow"
-        F[Generate CLI Token] --> G[Open Browser]
-        G --> H[GitHub OAuth]
-        H --> I[Exchange for JWT]
-        I --> J[CLI Polling]
-    end
-```
-
-### System Overview
-High-level component architecture showing the interactions between CLI, FastAPI backend, SQLite database, and GitHub OAuth. This diagram provides a quick understanding of the system's main components and how they communicate, useful for understanding the overall architecture before diving into specific flows.
-
-
 ### Authentication Flow Diagram
 Shows the complete OAuth2 flow from CLI to GitHub and back. This diagram illustrates how we achieve seamless browser-based authentication without requiring users to copy/paste tokens, fulfilling the assignment's requirement for frictionless social login. The CLI generates a unique token, opens the browser, and polls for the JWT after GitHub authorization completes.
 
-```mermaid
-sequenceDiagram
-    participant CLI
-    participant Backend  
-    participant Browser
-    participant GitHub
-    participant DB
-    
-    CLI->>CLI: 1. Generate unique CLI token
-    CLI->>Browser: 2. Open /auth/github/start?cli_token=X
-    Browser->>Backend: 3. GET /auth/github/start
-    Backend->>Backend: 4. Create signed state with CLI token
-    Backend->>Browser: 5. Redirect to GitHub OAuth
-    Browser->>GitHub: 6. User authorizes application
-    GitHub->>Backend: 7. Callback with auth code & state
-    Backend->>Backend: 8. Verify state (CSRF protection)
-    Backend->>GitHub: 9. Exchange code for access token
-    GitHub->>Backend: 10. Return access token
-    Backend->>GitHub: 11. Fetch user profile & email
-    Backend->>DB: 12. Create/update user record
-    Backend->>Backend: 13. Generate JWT, store in pending_tokens
-    CLI->>Backend: 14. Poll /auth/cli-exchange every 2s
-    Backend->>CLI: 15. Return JWT token (one-time)
-    CLI->>CLI: 16. Store token in ~/.config/secret-cli/
-```
+[Diagram 1 - Authentication Flow]
 
 ### Database Entity Relationship Diagram  
 Displays the complete database schema with all six tables and their relationships. This ERD demonstrates how we implement the hierarchical organization structure (users belong to one organization, can belong to multiple teams) and the ACL-based permission system that controls secret access at user, team, and organization levels.
 
-```mermaid
-erDiagram
-    Organization ||--o{ User : belongs_to
-    Organization ||--o{ Team : contains
-    Organization ||--o{ Secret : owns
-    User ||--o{ Secret : creates
-    User ||--o{ TeamMembership : has
-    Team ||--o{ TeamMembership : contains
-    Secret ||--o{ ACL : controls
-    
-    Organization {
-        int id
-        string name
-        datetime created_at
-    }
-    
-    User {
-        int id
-        string email
-        string name
-        string github_id
-        int organization_id
-        bool is_admin
-        datetime created_at
-    }
-    
-    Team {
-        int id
-        string name
-        int organization_id
-        datetime created_at
-    }
-    
-    Secret {
-        int id
-        int organization_id
-        string key
-        string value
-        int created_by_id
-        datetime created_at
-        datetime updated_at
-    }
-    
-    ACL {
-        int id
-        int secret_id
-        string subject_type
-        int subject_id
-        bool can_read
-        bool can_write
-    }
-    
-    TeamMembership {
-        int id
-        int team_id
-        int user_id
-    }
-```
+[Diagram 2 - Database ERD]
 
 ### API Request Flow
 Illustrates the JWT verification pipeline for authenticated requests. Every API call passes through the authentication layer where the JWT is extracted from headers, verified, and used to fetch the current user from the database. This ensures all operations are properly authorized and scoped to the user's organization.
 
-```mermaid
-sequenceDiagram
-    participant Client
-    participant FastAPI
-    participant AuthLayer as Authentication Layer
-    participant JWTVerifier as JWT Verifier
-    participant Database
-    
-    Client->>FastAPI: GET /secrets (Authorization: Bearer token)
-    FastAPI->>AuthLayer: get_current_user(token)
-    AuthLayer->>AuthLayer: Extract token from header
-    AuthLayer->>JWTVerifier: verify_jwt_token(token)
-    JWTVerifier->>JWTVerifier: Decode & validate signature
-    JWTVerifier-->>AuthLayer: payload (or error)
-    AuthLayer->>Database: get_user(github_id)
-    Database-->>AuthLayer: User object
-    AuthLayer-->>FastAPI: current_user
-    FastAPI->>Database: list_secrets(current_user)
-    Database->>Database: Apply permission filters
-    Database-->>FastAPI: Filtered secrets
-    FastAPI-->>Client: JSON response
-```
+[Diagram 3 - API Request Flow]
+
+### System Overview
+High-level component architecture showing the interactions between CLI, FastAPI backend, SQLite database, and GitHub OAuth. This diagram provides a quick understanding of the system's main components and how they communicate, useful for understanding the overall architecture before diving into specific flows.
+
+[Diagram 4 - System Overview]
 
 ## Tech Stack
 
