@@ -1,8 +1,10 @@
-from typing import Optional
+from typing import Optional, List
 
 import httpx
-from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlmodel import Session, SQLModel, create_engine, select
+from pydantic import BaseModel
 
 from .auth import create_state  # Phase 1D & 1E
 from .auth import (
@@ -13,9 +15,77 @@ from .auth import (
     verify_state,
 )
 from .config import settings  # Phase 1C
+from .models import *  # Phase 2A: Database models
+from . import crud  # Phase 2C: Database operations
+
+# Phase 2B: Create database engine
+engine = create_engine("sqlite:///app.db", echo=True)
 
 # Create the FastAPI application
 app = FastAPI(title="Secret Sharing API")
+
+# Phase 2B: Create tables on startup
+@app.on_event("startup")
+def on_startup():
+    SQLModel.metadata.create_all(engine)
+
+# Phase 2B: Dependency to get database session
+def get_session():
+    with Session(engine) as session:
+        yield session
+
+# Phase 2D: Pydantic models for API requests/responses
+class ACLEntry(BaseModel):
+    """Defines who can access a secret"""
+    subject_type: str  # 'user', 'team', 'org'
+    subject_id: Optional[int] = None
+    can_read: bool = True
+    can_write: bool = False
+
+class SecretCreate(BaseModel):
+    """Request body for creating a secret"""
+    key: str
+    value: str
+    acl_entries: Optional[List[ACLEntry]] = None
+
+class SecretUpdate(BaseModel):
+    """Request body for updating a secret"""
+    value: Optional[str] = None
+    acl_entries: Optional[List[ACLEntry]] = None
+
+# Phase 2D: Dependency to get current user from JWT
+async def get_current_user(
+    authorization: Optional[str] = Header(None),
+    session: Session = Depends(get_session)
+) -> User:
+    """
+    Extract and validate user from JWT token.
+    This runs before every protected endpoint.
+    """
+    # 1. Check authorization header exists
+    if not authorization:
+        raise HTTPException(status_code=401, detail="No authorization header")
+    
+    # 2. Check it's a Bearer token
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization format")
+    
+    # 3. Extract and verify the token
+    token = authorization.replace("Bearer ", "")
+    payload = verify_jwt_token(token)
+    
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    
+    # 4. Get or create user in database
+    user = crud.get_or_create_user(
+        session,
+        email=payload.get("email"),
+        name=payload.get("name"),
+        github_id=payload.get("sub")
+    )
+    
+    return user
 
 
 # Part 1A: Basic health check to verify server is running
@@ -200,3 +270,161 @@ async def cli_exchange(cli_token: str = Query(...)):
     # 2. Return token and remove it (one-time use)
     data = pending_tokens.pop(cli_token)
     return {"token": data["token"], "user": data["user"]}
+
+
+# Phase 2D: Secret Management Endpoints
+
+@app.get("/secrets")
+async def list_secrets(
+    query: Optional[str] = Query(None, description="Search filter for secret keys"),
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    List all secrets user can access.
+    This is the main endpoint for displaying secrets in the CLI.
+    """
+    # 1. Get all secrets user can read (filtered by permissions)
+    secrets = crud.list_secrets(session, current_user, query)
+    
+    # 2. Add metadata for each secret (can user write to it?)
+    result = []
+    for secret in secrets:
+        result.append({
+            "id": secret.id,
+            "key": secret.key,
+            "value": secret.value,
+            "created_by_id": secret.created_by_id,
+            "created_at": secret.created_at,
+            "can_write": crud.can_write_secret(session, current_user, secret)
+        })
+    
+    return result
+
+@app.post("/secrets", status_code=201)
+async def create_secret(
+    body: SecretCreate,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Create a new secret.
+    User provides key and value, optionally can share with teams/users.
+    """
+    # 1. Convert ACL entries to dict format for crud function
+    acl_dicts = None
+    if body.acl_entries:
+        acl_dicts = [entry.dict() for entry in body.acl_entries]
+    
+    # 2. Create the secret in database
+    secret = crud.create_secret(
+        session,
+        current_user,
+        body.key,
+        body.value,
+        acl_dicts
+    )
+    
+    # 3. Return created secret with metadata
+    return {
+        "id": secret.id,
+        "key": secret.key,
+        "value": secret.value,
+        "created_by_id": secret.created_by_id,
+        "created_at": secret.created_at,
+        "message": "Secret created successfully"
+    }
+
+# Phase 2D: Helper endpoint for testing - Get current user info
+@app.get("/me")
+async def get_current_user_info(
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get current user information from JWT token.
+    Useful for testing authentication.
+    """
+    return {
+        "id": current_user.id,
+        "email": current_user.email,
+        "name": current_user.name,
+        "organization_id": current_user.organization_id,
+        "is_admin": current_user.is_admin
+    }
+
+@app.get("/secrets/{secret_id}")
+async def get_secret(
+    secret_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get a specific secret by ID.
+    Returns 404 if not found, 403 if no permission.
+    """
+    # 1. Try to get the secret
+    secret = crud.get_secret(session, secret_id, current_user)
+    
+    # 2. Handle not found or no permission
+    if not secret:
+        # Check if secret exists but user can't access it
+        secret_exists = session.get(Secret, secret_id)
+        if secret_exists and secret_exists.organization_id == current_user.organization_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        else:
+            raise HTTPException(status_code=404, detail="Secret not found")
+    
+    # 3. Return secret with metadata
+    return {
+        "id": secret.id,
+        "key": secret.key,
+        "value": secret.value,
+        "created_by_id": secret.created_by_id,
+        "created_at": secret.created_at,
+        "can_write": crud.can_write_secret(session, current_user, secret)
+    }
+
+@app.put("/secrets/{secret_id}")
+async def update_secret(
+    secret_id: int,
+    body: SecretUpdate,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Update a secret's value or permissions.
+    Only users with write permission can update.
+    """
+    # 1. Convert ACL entries if provided
+    acl_dicts = None
+    if body.acl_entries is not None:
+        acl_dicts = [entry.dict() for entry in body.acl_entries]
+    
+    # 2. Try to update the secret
+    secret = crud.update_secret(
+        session,
+        secret_id,
+        current_user,
+        body.value,
+        acl_dicts
+    )
+    
+    # 3. Handle errors
+    if not secret:
+        # Check why update failed
+        secret_exists = session.get(Secret, secret_id)
+        if not secret_exists:
+            raise HTTPException(status_code=404, detail="Secret not found")
+        elif not crud.can_write_secret(session, current_user, secret_exists):
+            raise HTTPException(status_code=403, detail="No write permission")
+        else:
+            raise HTTPException(status_code=400, detail="Update failed")
+    
+    # 4. Return updated secret
+    return {
+        "id": secret.id,
+        "key": secret.key,
+        "value": secret.value,
+        "updated_at": secret.updated_at,
+        "message": "Secret updated successfully"
+    }
