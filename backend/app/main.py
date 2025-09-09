@@ -205,6 +205,7 @@ async def github_login_start(cli_token: str = Query(...)):
         f"&redirect_uri={settings.base_url}/auth/github/callback"
         f"&scope=user:email"
         f"&state={state}"
+        f"&prompt=select_account"
     )
     return RedirectResponse(url=github_auth_url)
 
@@ -247,15 +248,28 @@ async def github_callback(code: str = Query(...), state: str = Query(...)):
         return HTMLResponse("<h1>Error</h1><p>Failed to get user info</p>", 400)
 
     # Create or get user from database to get is_admin status
-    with Session(engine) as session:
-        db_user = crud.get_or_create_user(
-            session=session,
-            github_id=user_data["id"],
-            email=user_data.get("email", f"{user_data['login']}@users.noreply.github.com"),
-            name=user_data.get("name", user_data["login"]),
-        )
-        # Include is_admin in user data for CLI
-        user_data["is_admin"] = db_user.is_admin
+    try:
+        with Session(engine) as session:
+            # Ensure email is unique by using GitHub login if email is missing
+            user_email = user_data.get("email")
+            if not user_email:
+                user_email = f"{user_data['login']}@users.noreply.github.com"
+            
+            # Ensure name is never None - use login as fallback
+            user_name = user_data.get("name") or user_data["login"]
+            
+            db_user = crud.get_or_create_user(
+                session=session,
+                github_id=str(user_data["id"]),  # Convert to string
+                email=user_email,
+                name=user_name,
+            )
+            # Include is_admin in user data for CLI
+            user_data["is_admin"] = db_user.is_admin
+    except Exception as e:
+        print(f"Error creating/getting user: {e}")
+        print(f"GitHub user data: {user_data}")
+        return HTMLResponse(f"<h1>Error</h1><p>Failed to create user: {str(e)}</p>", 500)
     
     # Create JWT for our app
     jwt_token = create_jwt_token(
