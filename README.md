@@ -1,4 +1,5 @@
 # SecretShare
+<img width="360" height="138" alt="Screenshot 2025-09-09 at 11 45 04 AM" src="https://github.com/user-attachments/assets/6ed8b16b-2627-4f6d-867e-8d084ea14a86" />
 
 ## Assignment Requirements
 
@@ -6,8 +7,13 @@ Secret sharing system with:
 - Command line utility using Ink
 - Backend web server 
 - Key/value secret storage with authorization
+  <img width="355" height="296" alt="Screenshot 2025-09-09 at 11 47 03 AM" src="https://github.com/user-attachments/assets/b5dbafe6-27f4-4e4f-8f21-eb420f65f53a" />
+
 - User, team, organization, and admin support
+  <img width="341" height="235" alt="Screenshot 2025-09-09 at 11 46 40 AM" src="https://github.com/user-attachments/assets/7606a34f-ef65-425d-ab07-db1d413ed876" />
+
 - OAuth2 authentication via GitHub
+ <img width="445" height="290" alt="Screenshot 2025-09-09 at 11 45 21 AM" src="https://github.com/user-attachments/assets/3acc873f-5722-4fc6-a423-833a27add842" />
 - Session persistence across CLI restarts
 
 ## Implementation Overview
@@ -15,6 +21,7 @@ Secret sharing system with:
 **CLI**: React Ink-based terminal interface with TypeScript
 **Backend**: FastAPI with Python, SQLite database
 **Authentication**: GitHub OAuth2 with browser-based login
+
 **Authorization**: ACL-based permissions for users, teams, and organizations
 
 ## Architecture
