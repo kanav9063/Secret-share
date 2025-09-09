@@ -29,23 +29,21 @@ Secret sharing system with:
 
 ### Authentication Flow Diagram
 Shows the complete OAuth2 flow from CLI to GitHub and back. This diagram illustrates how we achieve seamless browser-based authentication without requiring users to copy/paste tokens, fulfilling the assignment's requirement for frictionless social login. The CLI generates a unique token, opens the browser, and polls for the JWT after GitHub authorization completes.
-
+<img width="434" height="896" alt="Screenshot 2025-09-09 at 3 11 31 AM" src="https://github.com/user-attachments/assets/93afcd0b-4c01-42d6-bc7f-b4cb117f7c6d" />
 [Diagram 1 - Authentication Flow]
 
 ### Database Entity Relationship Diagram  
 Displays the complete database schema with all six tables and their relationships. This ERD demonstrates how we implement the hierarchical organization structure (users belong to one organization, can belong to multiple teams) and the ACL-based permission system that controls secret access at user, team, and organization levels.
 
+<img width="560" height="954" alt="Screenshot 2025-09-09 at 3 12 01 AM" src="https://github.com/user-attachments/assets/9d30b3fa-76d5-4d8e-8e88-e1b8568a5cb0" />
 [Diagram 2 - Database ERD]
 
 ### API Request Flow
 Illustrates the JWT verification pipeline for authenticated requests. Every API call passes through the authentication layer where the JWT is extracted from headers, verified, and used to fetch the current user from the database. This ensures all operations are properly authorized and scoped to the user's organization.
 
+<img width="1544" height="918" alt="Screenshot 2025-09-09 at 3 12 32 AM" src="https://github.com/user-attachments/assets/02f9b742-80d8-4374-b413-31a1d3cd526d" />
 [Diagram 3 - API Request Flow]
 
-### System Overview
-High-level component architecture showing the interactions between CLI, FastAPI backend, SQLite database, and GitHub OAuth. This diagram provides a quick understanding of the system's main components and how they communicate, useful for understanding the overall architecture before diving into specific flows.
-
-[Diagram 4 - System Overview]
 
 ## Tech Stack
 
