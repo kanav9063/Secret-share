@@ -1,9 +1,3 @@
----
-noteId: "30c099a08d6411f08b2675fee6e4b94e"
-tags: []
-
----
-
 # SecretShare
 
 Product Engineer Take Home Assignment implementation: A secret sharing system with CLI and backend web server.
