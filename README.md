@@ -56,10 +56,7 @@ Illustrates the JWT verification pipeline for authenticated requests. Every API 
 
 1. **Clone and setup backend**
    ```bash
-   git clone <repo-url>
-   cd ChipAgents-SecretShare/backend
-   python -m venv venv
-   source venv/bin/activate  # Windows: venv\Scripts\activate
+   git clone 
    pip install -r requirements.txt
    ```
 
