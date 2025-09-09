@@ -246,6 +246,17 @@ async def github_callback(code: str = Query(...), state: str = Query(...)):
     if not user_data:
         return HTMLResponse("<h1>Error</h1><p>Failed to get user info</p>", 400)
 
+    # Create or get user from database to get is_admin status
+    with Session(engine) as session:
+        db_user = crud.get_or_create_user(
+            session=session,
+            github_id=user_data["id"],
+            email=user_data.get("email", f"{user_data['login']}@users.noreply.github.com"),
+            name=user_data.get("name", user_data["login"]),
+        )
+        # Include is_admin in user data for CLI
+        user_data["is_admin"] = db_user.is_admin
+    
     # Create JWT for our app
     jwt_token = create_jwt_token(
         {
@@ -257,7 +268,7 @@ async def github_callback(code: str = Query(...), state: str = Query(...)):
             "login": user_data["login"],
         }
     )
-
+    
     # Store for CLI polling
     pending_tokens[cli_token] = {"token": jwt_token, "user": user_data}
 
