@@ -1,5 +1,4 @@
 # SecretShare
-<img width="969" height="151" alt="Screenshot 2025-09-09 at 7 15 16 AM" src="https://github.com/user-attachments/assets/49b4bcf5-8a36-441e-bbfa-9a4b3f5619ea" />
 
 ## Assignment Requirements
 
