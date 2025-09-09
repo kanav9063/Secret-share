@@ -117,20 +117,38 @@ async def config_test():
 # JWT Test Endpoints (for development only)
 # Phase 1D: Create a JWT token (simulating what happens after login)
 @app.post("/test-token")
-async def create_test_token():
+async def create_test_token(session: Session = Depends(get_session)):
     """
-    Create a test JWT token.
-    In real app, this would happen after login.
+    Create a test JWT token with actual database user.
+    Phase 3: Updated to create admin user for testing teams.
     """
-    # Sample user data
-    test_user = {
-        "sub": "12345",  # User ID
-        "email": "test@example.com",
-        "name": "Test User",
-    }
+    try:
+        # 1. Get or create test user in database
+        test_user = crud.get_or_create_user(
+            session,
+            email="test@example.com",
+            name="Test User",
+            github_id="test-12345"
+        )
+        
+        # 2. Make the test user an admin for testing
+        test_user.is_admin = True
+        session.add(test_user)
+        session.commit()
+        session.refresh(test_user)
+        
+        # 3. Create JWT token with actual user ID
+        token_data = {
+            "sub": str(test_user.id),  # Use actual DB user ID
+            "email": test_user.email,
+            "name": test_user.name,
+        }
 
-    # Create token
-    token = create_jwt_token(test_user)
+        # 4. Create token
+        token = create_jwt_token(token_data)
+    except Exception as e:
+        print(f"Error creating test token: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
     return {
         "token": token,
@@ -281,22 +299,67 @@ async def list_secrets(
     current_user: User = Depends(get_current_user)
 ):
     """
-    List all secrets user can access.
-    This is the main endpoint for displaying secrets in the CLI.
+    List all secrets user can access with detailed sharing information.
+    Phase 3 enhancement: Now includes WHO each secret is shared with.
     """
     # 1. Get all secrets user can read (filtered by permissions)
     secrets = crud.list_secrets(session, current_user, query)
     
-    # 2. Add metadata for each secret (can user write to it?)
+    # 2. Build enhanced response with sharing details (Phase 3 improvement)
     result = []
     for secret in secrets:
+        # 2a. Get all ACL entries to see who has access
+        stmt = select(ACL).where(ACL.secret_id == secret.id)
+        acl_entries = session.exec(stmt).all()
+        
+        # 2b. Build human-readable sharing summary
+        shared_with = {
+            "users": [],
+            "teams": [],
+            "org_wide": False
+        }
+        
+        # 2c. Convert ACL entries to names (not just IDs)
+        for acl in acl_entries:
+            if acl.subject_type == "user" and acl.subject_id != secret.created_by_id:
+                # Add shared user details
+                user = session.get(User, acl.subject_id)
+                if user:
+                    shared_with["users"].append({
+                        "id": user.id,
+                        "name": user.name,
+                        "email": user.email,
+                        "can_write": acl.can_write
+                    })
+            elif acl.subject_type == "team":
+                # Add shared team details
+                team = session.get(Team, acl.subject_id)
+                if team:
+                    shared_with["teams"].append({
+                        "id": team.id,
+                        "name": team.name,
+                        "can_write": acl.can_write
+                    })
+            elif acl.subject_type == "org":
+                # Mark organization-wide sharing
+                shared_with["org_wide"] = True
+                shared_with["org_can_write"] = acl.can_write
+        
+        # 2d. Get creator's name
+        creator = session.get(User, secret.created_by_id)
+        creator_name = creator.name if creator else "Unknown"
+        
+        # 2e. Compile all secret info
         result.append({
             "id": secret.id,
             "key": secret.key,
             "value": secret.value,
-            "created_by_id": secret.created_by_id,
-            "created_at": secret.created_at,
-            "can_write": crud.can_write_secret(session, current_user, secret)
+            "created_at": secret.created_at.isoformat(),
+            "created_by": secret.created_by_id,
+            "created_by_name": creator_name,  # New in Phase 3
+            "can_write": crud.can_write_secret(session, current_user, secret),
+            "is_creator": secret.created_by_id == current_user.id,  # New in Phase 3
+            "shared_with": shared_with  # New in Phase 3: Full sharing details
         })
     
     return result
@@ -428,3 +491,136 @@ async def update_secret(
         "updated_at": secret.updated_at,
         "message": "Secret updated successfully"
     }
+
+
+# Phase 3B: Team Management Endpoints
+
+@app.get("/teams")
+async def list_teams(
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    List all teams in the organization.
+    Any user can see all teams in their org.
+    """
+    # 1. Get all teams in user's organization
+    teams = crud.get_org_teams(session, current_user.organization_id)
+    
+    # 2. Return teams list
+    return {"teams": teams}
+
+@app.get("/teams/mine")
+async def my_teams(
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    List teams the current user belongs to.
+    Shows which teams the user is a member of.
+    """
+    # 1. Get teams user is a member of
+    teams = crud.get_user_teams(session, current_user.id)
+    
+    # 2. Return user's teams
+    return {"teams": teams}
+
+@app.post("/teams")
+async def create_team_endpoint(
+    name: str = Query(..., description="Team name"),
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    Create a new team (admin only).
+    Admin users can create teams in their organization.
+    """
+    # 1. Check if user is admin
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    # 2. Create the team
+    team = crud.create_team(session, name, current_user.organization_id)
+    
+    # 3. Add creator as first member
+    crud.add_team_member(session, team.id, current_user.id)
+    
+    # 4. Return created team as dict
+    return {
+        "team": {
+            "id": team.id,
+            "name": team.name,
+            "organization_id": team.organization_id,
+            "created_at": team.created_at.isoformat() if team.created_at else None
+        }
+    }
+
+@app.post("/teams/{team_id}/members")
+async def add_member(
+    team_id: int,
+    user_id: int = Query(..., description="User ID to add"),
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    Add a member to a team (admin only).
+    Admins can add any user in their org to any team.
+    """
+    # 1. Check if user is admin
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    # 2. Verify team exists and belongs to user's org
+    teams = crud.get_org_teams(session, current_user.organization_id)
+    team = next((t for t in teams if t.id == team_id), None)
+    if not team:
+        raise HTTPException(status_code=404, detail="Team not found in your organization")
+    
+    # 3. Verify user exists and belongs to same org
+    user_to_add = session.get(User, user_id)
+    if not user_to_add or user_to_add.organization_id != current_user.organization_id:
+        raise HTTPException(status_code=404, detail="User not found in your organization")
+    
+    # 4. Add user to team
+    membership = crud.add_team_member(session, team_id, user_id)
+    
+    # 5. Return membership info
+    return {"membership": membership, "message": f"User {user_to_add.name} added to team {team.name}"}
+
+@app.get("/teams/{team_id}/members")
+async def list_team_members(
+    team_id: int,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    List members of a team.
+    Any user in the org can see team membership.
+    """
+    # 1. Verify team exists and belongs to user's org
+    teams = crud.get_org_teams(session, current_user.organization_id)
+    team = next((t for t in teams if t.id == team_id), None)
+    if not team:
+        raise HTTPException(status_code=404, detail="Team not found in your organization")
+    
+    # 2. Get team members
+    members = crud.get_team_members(session, team_id)
+    
+    # 3. Return members list
+    return {"team": team, "members": members}
+
+@app.get("/users")
+async def list_users(
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    List all users in the organization.
+    Used for adding users to teams.
+    """
+    # 1. Get all users in the organization
+    stmt = select(User).where(User.organization_id == current_user.organization_id)
+    users = session.exec(stmt).all()
+    
+    # 2. Return users list
+    return {"users": users}

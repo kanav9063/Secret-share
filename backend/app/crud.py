@@ -259,11 +259,18 @@ def get_or_create_user(
     Get existing user or create new one.
     Used during login to ensure user exists in our database.
     """
-    # 1. Check if user already exists (by GitHub ID)
-    stmt = select(User).where(User.github_id == github_id)
+    # 1. Check if user already exists (by GitHub ID or email for testing)
+    stmt = select(User).where(
+        (User.github_id == github_id) | (User.email == email)
+    )
     user = session.exec(stmt).first()
     
     if user:
+        # Update GitHub ID if needed (for test users)
+        if user.github_id != github_id:
+            user.github_id = github_id
+            session.add(user)
+            session.commit()
         return user
     
     # 2. Create default organization if this is the first user

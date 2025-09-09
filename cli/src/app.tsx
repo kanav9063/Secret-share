@@ -8,15 +8,33 @@ import open from "open"; // Part 1G: Opens browser
 import fetch from "node-fetch"; // Part 1G: HTTP requests
 import { v4 as uuidv4 } from "uuid"; // Part 1G: Generate unique tokens
 import { saveAuth, loadAuth, clearAuth, getConfigPath } from "./config.js"; // Part 1H: Token persistence
+import { TeamsScreen } from "./screens/Teams.js"; // Phase 3D: Teams management screen
 
-// Phase 2E: TypeScript interface for our secret data
+// Phase 3E: Enhanced TypeScript interface for our secret data
 interface Secret {
   id: number;
   key: string;
   value: string;
-  created_by_id: number;
+  created_by: number;  // Changed from created_by_id
+  created_by_name: string;  // New: creator's name
   created_at: string;
   can_write: boolean;
+  is_creator: boolean;  // New: am I the creator?
+  shared_with: {  // New: detailed sharing info
+    users: Array<{
+      id: number;
+      name: string;
+      email: string;
+      can_write: boolean;
+    }>;
+    teams: Array<{
+      id: number;
+      name: string;
+      can_write: boolean;
+    }>;
+    org_wide: boolean;
+    org_can_write?: boolean;
+  };
 }
 
 // Phase 2E: Secrets Screen Component
@@ -207,7 +225,7 @@ const SecretsScreen = ({
     );
   }
 
-  // 10. Show list of secrets (default view)
+  // 10. Show list of secrets (default view) - Phase 3E Enhanced
   return (
     <Box flexDirection="column">
       <Text color="cyan" bold>
@@ -219,28 +237,73 @@ const SecretsScreen = ({
         // 10a. Show message if no secrets exist
         <Text color="gray">No secrets yet. Press 'c' to create one.</Text>
       ) : (
-        // 10b. Show table of secrets
+        // 10b. Show enhanced table of secrets with sharing info
         <Box flexDirection="column">
-          {/* Table header */}
+          {/* Table header - Phase 3E: Added Sharing column */}
           <Box>
             <Text color="gray" bold>
-              {"Key".padEnd(30)} {"Value".padEnd(40)} {"Write"}
+              {"Key".padEnd(25)} {"Value".padEnd(30)} {"Creator".padEnd(15)} {"Sharing".padEnd(10)} {"Access"}
             </Text>
           </Box>
-          <Text>{"─".repeat(80)}</Text>
+          <Text>{"─".repeat(95)}</Text>
 
-          {/* List each secret */}
-          {secrets.map((secret) => (
-            <Box key={secret.id}>
-              <Text color="yellow">
-                {secret.key.padEnd(30).substring(0, 30)}{" "}
-              </Text>
-              <Text>{secret.value.padEnd(40).substring(0, 40)} </Text>
-              <Text color={secret.can_write ? "green" : "red"}>
-                {secret.can_write ? "✓" : "✗"}
-              </Text>
-            </Box>
-          ))}
+          {/* List each secret with enhanced info */}
+          {secrets.map((secret) => {
+            // Build sharing indicators (Phase 3E)
+            let sharingIcons = "";
+            if (secret.shared_with.org_wide) {
+              sharingIcons += "🌐 ";  // Organization-wide
+            }
+            if (secret.shared_with.teams.length > 0) {
+              sharingIcons += "👥 ";  // Shared with teams
+            }
+            if (secret.shared_with.users.length > 0) {
+              sharingIcons += "👤 ";  // Shared with specific users
+            }
+            if (!sharingIcons) {
+              sharingIcons = "🔒 ";  // Private (only creator)
+            }
+
+            // Determine access level
+            let accessText = "";
+            let accessColor = "yellow";
+            if (secret.is_creator) {
+              accessText = "Owner";
+              accessColor = "green";
+            } else if (secret.can_write) {
+              accessText = "Write";
+              accessColor = "cyan";
+            } else {
+              accessText = "Read";
+              accessColor = "gray";
+            }
+
+            return (
+              <Box key={secret.id}>
+                <Text color="yellow">
+                  {secret.key.padEnd(25).substring(0, 25)}{" "}
+                </Text>
+                <Text>
+                  {secret.value.padEnd(30).substring(0, 30)}{" "}
+                </Text>
+                <Text color="magenta">
+                  {secret.created_by_name.padEnd(15).substring(0, 15)}{" "}
+                </Text>
+                <Text>
+                  {sharingIcons.padEnd(10)}{" "}
+                </Text>
+                <Text color={accessColor}>
+                  {accessText}
+                </Text>
+              </Box>
+            );
+          })}
+
+          {/* Legend for sharing icons */}
+          <Text> </Text>
+          <Text color="gray">
+            🔒=Private  👤=Users  👥=Teams  🌐=Organization
+          </Text>
         </Box>
       )}
 
@@ -253,7 +316,7 @@ const SecretsScreen = ({
 // Main CLI Component
 const App = () => {
   // Part 1F: Track which screen we're on
-  const [screen, setScreen] = useState<"menu" | "login" | "secrets" | "logout">(
+  const [screen, setScreen] = useState<"menu" | "login" | "secrets" | "teams" | "logout">(
     "menu"
   );
 
@@ -282,8 +345,9 @@ const App = () => {
   // 2. Menu options (key added to prevent React warning)
   const menuItems = user
     ? [
-        { label: "Logout", value: "logout", key: "logout" },
         { label: "View Secrets", value: "secrets", key: "secrets" },
+        { label: "View Teams", value: "teams", key: "teams" },  // Phase 3D: Teams option
+        { label: "Logout", value: "logout", key: "logout" },
         { label: "Exit", value: "exit", key: "exit" },
       ]
     : [
@@ -313,6 +377,8 @@ const App = () => {
       setTimeout(() => setScreen("menu"), 1000);
     } else if (item.value === "secrets") {
       setScreen("secrets");
+    } else if (item.value === "teams") {
+      setScreen("teams");  // Phase 3D: Handle teams selection
     }
   };
 
@@ -438,6 +504,11 @@ const App = () => {
   // Phase 2E: Secrets Screen Component
   if (screen === "secrets") {
     return <SecretsScreen token={token} onBack={() => setScreen("menu")} />;
+  }
+
+  // Phase 3D: Teams Screen Component
+  if (screen === "teams") {
+    return <TeamsScreen onBack={() => setScreen("menu")} />;
   }
 
   if (screen === "logout") {
