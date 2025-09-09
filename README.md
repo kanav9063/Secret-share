@@ -7,13 +7,14 @@ Secret sharing system with:
 - Command line utility using Ink
 - Backend web server 
 - Key/value secret storage with authorization
-  <img width="355" height="296" alt="Screenshot 2025-09-09 at 11 47 03 AM" src="https://github.com/user-attachments/assets/b5dbafe6-27f4-4e4f-8f21-eb420f65f53a" />
-
 - User, team, organization, and admin support
+  
   <img width="341" height="235" alt="Screenshot 2025-09-09 at 11 46 40 AM" src="https://github.com/user-attachments/assets/7606a34f-ef65-425d-ab07-db1d413ed876" />
 
 - OAuth2 authentication via GitHub
+  
  <img width="445" height="290" alt="Screenshot 2025-09-09 at 11 45 21 AM" src="https://github.com/user-attachments/assets/3acc873f-5722-4fc6-a423-833a27add842" />
+ 
 - Session persistence across CLI restarts
 
 ## Implementation Overview
@@ -225,6 +226,10 @@ cli/src/
 - Team and user selection interfaces
 - Admin panel for user/team management
 - Status indicators and error handling
+- 
+  <img width="355" height="296" alt="Screenshot 2025-09-09 at 11 47 03 AM" src="https://github.com/user-attachments/assets/b5dbafe6-27f4-4e4f-8f21-eb420f65f53a" />
+
+
 
 ## Assignment Completion
 
