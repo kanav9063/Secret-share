@@ -33,8 +33,9 @@ Displays the complete database schema with all six tables and their relationship
 ### API Request Flow
 Illustrates the JWT verification pipeline for authenticated requests. Every API call passes through the authentication layer where the JWT is extracted from headers, verified, and used to fetch the current user from the database. This ensures all operations are properly authorized and scoped to the user's organization.
 
-<img width="1544" height="918" alt="Screenshot 2025-09-09 at 3 12 32 AM" src="https://github.com/user-attachments/assets/02f9b742-80d8-4374-b413-31a1d3cd526d" />
-[Diagram 3 - API Request Flow]
+<img width="861" height="784" alt="Screenshot 2025-09-09 at 8 55 24 AM" src="https://github.com/user-attachments/assets/fa1b38ce-754e-4f6d-af6f-6acef8eb8f54" />
+
+[Diagram 3 - Initial O Auth + API Request Flow]
 
 
 ## Tech Stack
