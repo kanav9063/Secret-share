@@ -9,6 +9,8 @@ import fetch from "node-fetch"; // Part 1G: HTTP requests
 import { v4 as uuidv4 } from "uuid"; // Part 1G: Generate unique tokens
 import { saveAuth, loadAuth, clearAuth, getConfigPath } from "./config.js"; // Part 1H: Token persistence
 import { TeamsScreen } from "./screens/Teams.js"; // Phase 3D: Teams management screen
+import { AdminScreen } from "./screens/Admin.js"; // Phase 4: Admin panel
+import { ProfileScreen } from "./screens/Profile.js"; // Phase 4: User profile
 
 // Phase 3E: Enhanced TypeScript interface for our secret data
 interface Secret {
@@ -50,18 +52,28 @@ const SecretsScreen = ({
   const [secrets, setSecrets] = useState<Secret[]>([]); // List of secrets from backend
   const [loading, setLoading] = useState(true); // Are we loading data?
   const [error, setError] = useState<string | null>(null); // Any errors to show?
-  const [mode, setMode] = useState<"list" | "create">("list"); // Viewing list or creating?
+  const [mode, setMode] = useState<"list" | "create" | "delete">("list"); // Phase 4: Added delete mode
 
-  // 2. State for creating new secrets
+  // 2. State for creating new secrets with simple sharing
   const [newKey, setNewKey] = useState(""); // The key user is typing
   const [newValue, setNewValue] = useState(""); // The value user is typing
-  const [createStep, setCreateStep] = useState<"key" | "value">("key"); // Which field are we on?
+  const [createStep, setCreateStep] = useState<"key" | "value" | "sharing" | "permissions">("key");
+  const [sharingChoice, setSharingChoice] = useState<"private" | "team" | "org">("private");
+  const [grantWrite, setGrantWrite] = useState(false); // Read-only (false) or read-write (true)?
+  
+  // Phase 4: State for deleting secrets
+  const [selectedIndex, setSelectedIndex] = useState(0); // Which secret is selected
+  const [deleteTarget, setDeleteTarget] = useState<Secret | null>(null); // Secret to delete
+  
+  // State for user's teams (for auto-sharing)
+  const [userTeams, setUserTeams] = useState<any[]>([]);
 
   const { exit } = useApp();
 
-  // 3. When component loads, fetch secrets from backend
+  // 3. When component loads, fetch secrets and user's teams from backend
   useEffect(() => {
     fetchSecrets();
+    fetchUserTeams();
   }, []);
 
   // 4. Function to get secrets from our backend API
@@ -98,30 +110,108 @@ const SecretsScreen = ({
     }
   };
 
-  // 5. Function to create a new secret
+  // Function to fetch user's teams for auto-sharing
+  const fetchUserTeams = async () => {
+    if (!token) return;
+    
+    try {
+      const response = await fetch("http://localhost:8001/teams/mine", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      
+      if (response.ok) {
+        const data = await response.json() as { teams: any[] };
+        setUserTeams(data.teams || []);
+      }
+    } catch (err) {
+      // Silently fail - teams are optional for sharing
+    }
+  };
+
+  // 5. Function to create a new secret with simple sharing
   const createSecret = async () => {
     if (!token) return;
 
+    // Build ACL entries based on sharing selection
+    const acl_entries = [];
+    
+    if (sharingChoice === "team") {
+      // Share with all user's teams automatically
+      for (const team of userTeams) {
+        acl_entries.push({
+          subject_type: "team",
+          subject_id: team.id,
+          can_read: true,
+          can_write: grantWrite
+        });
+      }
+    } else if (sharingChoice === "org") {
+      // Share with entire organization
+      acl_entries.push({
+        subject_type: "org",
+        subject_id: null,
+        can_read: true,
+        can_write: grantWrite
+      });
+    }
+    // If "private", acl_entries stays empty (only creator has access)
+
     try {
-      // 5a. Send POST request to create secret
+      // 5a. Send POST request to create secret with ACL
       const response = await fetch("http://localhost:8001/secrets", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ key: newKey, value: newValue }),
+        body: JSON.stringify({ 
+          key: newKey, 
+          value: newValue,
+          acl_entries: acl_entries
+        }),
       });
 
       // 5b. If successful, reset form and refresh list
       if (response.ok) {
         setNewKey("");
         setNewValue("");
+        setSharingChoice("private");
+        setGrantWrite(false);
         setMode("list"); // Go back to list view
         setCreateStep("key");
         await fetchSecrets(); // Refresh the list
       } else {
         setError("Failed to create secret");
+      }
+    } catch (err) {
+      setError("Network error");
+    }
+  };
+
+  // Phase 4: Function to delete a secret
+  const deleteSecret = async (secret: Secret) => {
+    if (!token) return;
+
+    try {
+      // 1. Send DELETE request to backend
+      const response = await fetch(`http://localhost:8001/secrets/${secret.id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      // 2. Handle response
+      if (response.ok) {
+        setMode("list"); // Go back to list
+        setDeleteTarget(null);
+        await fetchSecrets(); // Refresh the list
+      } else if (response.status === 403) {
+        setError("You can only delete secrets you created");
+      } else {
+        setError("Failed to delete secret");
       }
     } catch (err) {
       setError("Network error");
@@ -136,6 +226,16 @@ const SecretsScreen = ({
         // Press 'c' to create new secret
         setMode("create");
         setCreateStep("key");
+      } else if (input === "d" && secrets.length > 0) {
+        // Phase 4: Press 'd' to delete selected secret
+        const secret = secrets[selectedIndex];
+        if (secret && secret.is_creator) {
+          setDeleteTarget(secret);
+          setMode("delete");
+        } else {
+          setError("You can only delete secrets you created");
+          setTimeout(() => setError(null), 3000);
+        }
       } else if (input === "r") {
         // Press 'r' to refresh the list
         setLoading(true);
@@ -143,6 +243,12 @@ const SecretsScreen = ({
       } else if (input === "q") {
         // Press 'q' to go back to main menu
         onBack();
+      } else if (key.upArrow && selectedIndex > 0) {
+        // Navigate up in the list
+        setSelectedIndex(selectedIndex - 1);
+      } else if (key.downArrow && selectedIndex < secrets.length - 1) {
+        // Navigate down in the list
+        setSelectedIndex(selectedIndex + 1);
       }
     } else if (mode === "create") {
       // 6b. Create mode shortcuts
@@ -152,13 +258,26 @@ const SecretsScreen = ({
         setNewKey("");
         setNewValue("");
         setCreateStep("key");
+        setSharingChoice("private");
+        setGrantWrite(false);
       } else if (key.return) {
         // Press Enter to continue
         if (createStep === "key" && newKey) {
           setCreateStep("value"); // Move to value input
         } else if (createStep === "value" && newValue) {
-          createSecret(); // Submit the secret
+          setCreateStep("sharing"); // Move to sharing options
         }
+        // Sharing and permissions steps are handled by SelectInput onSelect
+      }
+    } else if (mode === "delete") {
+      // Phase 4: Delete mode shortcuts
+      if (input === "y" && deleteTarget) {
+        // Confirm delete
+        deleteSecret(deleteTarget);
+      } else if (input === "n" || key.escape) {
+        // Cancel delete
+        setMode("list");
+        setDeleteTarget(null);
       }
     }
   });
@@ -195,32 +314,117 @@ const SecretsScreen = ({
 
   // 9. Show create form when user is creating a secret
   if (mode === "create") {
-    return (
-      <Box flexDirection="column">
-        <Text color="cyan" bold>
-          📝 Create New Secret
-        </Text>
-        <Text> </Text>
-
-        {createStep === "key" ? (
-          // 9a. Step 1: Enter the key name
+    // Step 1: Enter key
+    if (createStep === "key") {
+      return (
+        <Box flexDirection="column">
+          <Text color="cyan" bold>📝 Create New Secret - Step 1/4</Text>
+          <Text> </Text>
           <Box>
             <Text>Key: </Text>
             <TextInput value={newKey} onChange={setNewKey} />
           </Box>
-        ) : (
-          // 9b. Step 2: Enter the value
-          <>
-            <Text color="green">Key: {newKey}</Text>
-            <Box>
-              <Text>Value: </Text>
-              <TextInput value={newValue} onChange={setNewValue} />
-            </Box>
-          </>
-        )}
+          <Text> </Text>
+          <Text color="gray">Press Enter to continue, Escape to cancel</Text>
+        </Box>
+      );
+    }
+    
+    // Step 2: Enter value
+    if (createStep === "value") {
+      return (
+        <Box flexDirection="column">
+          <Text color="cyan" bold>📝 Create New Secret - Step 2/4</Text>
+          <Text> </Text>
+          <Text color="green">Key: {newKey}</Text>
+          <Box>
+            <Text>Value: </Text>
+            <TextInput value={newValue} onChange={setNewValue} />
+          </Box>
+          <Text> </Text>
+          <Text color="gray">Press Enter to continue, Escape to cancel</Text>
+        </Box>
+      );
+    }
+    
+    // Step 3: Choose sharing
+    if (createStep === "sharing") {
+      const sharingItems = [
+        { label: "🔒 Private (only you)", value: "private" },
+        { label: "👥 My Team" + (userTeams.length > 0 ? ` (${userTeams.map(t => t.name).join(", ")})` : ""), value: "team" },
+        { label: "🌐 Entire Organization", value: "org" }
+      ];
+      
+      return (
+        <Box flexDirection="column">
+          <Text color="cyan" bold>📝 Create New Secret - Step 3/4</Text>
+          <Text> </Text>
+          <Text color="green">Key: {newKey}</Text>
+          <Text>Value: {newValue.substring(0, 20) + (newValue.length > 20 ? "..." : "")}</Text>
+          <Text> </Text>
+          <Text bold>Who can access this secret?</Text>
+          <Text> </Text>
+          <SelectInput
+            items={sharingItems}
+            onSelect={(item) => {
+              setSharingChoice(item.value as "private" | "team" | "org");
+              if (item.value === "private") {
+                // Skip permissions step for private secrets
+                createSecret();
+              } else {
+                setCreateStep("permissions");
+              }
+            }}
+          />
+        </Box>
+      );
+    }
+    
+    // Step 4: Choose permissions (only if sharing)
+    if (createStep === "permissions") {
+      const permissionItems = [
+        { label: "👁  Read-only", value: "read" },
+        { label: "✏️  Read & Write", value: "write" }
+      ];
+      
+      return (
+        <Box flexDirection="column">
+          <Text color="cyan" bold>📝 Create New Secret - Step 4/4</Text>
+          <Text> </Text>
+          <Text color="green">Key: {newKey}</Text>
+          <Text>Value: {newValue.substring(0, 20) + (newValue.length > 20 ? "..." : "")}</Text>
+          <Text>Sharing: {sharingChoice === "team" ? "My Team" : "Organization"}</Text>
+          <Text> </Text>
+          <Text bold>What permission level?</Text>
+          <Text> </Text>
+          <SelectInput
+            items={permissionItems}
+            onSelect={(item) => {
+              setGrantWrite(item.value === "write");
+              createSecret();
+            }}
+          />
+        </Box>
+      );
+    }
+  }
 
+  // Phase 4: Show delete confirmation
+  if (mode === "delete" && deleteTarget) {
+    return (
+      <Box flexDirection="column">
+        <Text color="red" bold>
+          ⚠️ Delete Secret
+        </Text>
         <Text> </Text>
-        <Text color="gray">Press Enter to continue, Escape to cancel</Text>
+        <Text>Are you sure you want to delete this secret?</Text>
+        <Text> </Text>
+        <Text color="yellow">Key: {deleteTarget.key}</Text>
+        <Text>Value: {deleteTarget.value}</Text>
+        <Text> </Text>
+        <Text color="red" bold>This action cannot be undone!</Text>
+        <Text> </Text>
+        <Text>Press 'y' to confirm, 'n' or Escape to cancel</Text>
       </Box>
     );
   }
@@ -248,7 +452,7 @@ const SecretsScreen = ({
           <Text>{"─".repeat(95)}</Text>
 
           {/* List each secret with enhanced info */}
-          {secrets.map((secret) => {
+          {secrets.map((secret, index) => {
             // Build sharing indicators (Phase 3E)
             let sharingIcons = "";
             if (secret.shared_with.org_wide) {
@@ -278,8 +482,14 @@ const SecretsScreen = ({
               accessColor = "gray";
             }
 
+            // Phase 4: Highlight selected row
+            const isSelected = index === selectedIndex;
+
             return (
               <Box key={secret.id}>
+                <Text color={isSelected ? "blue" : undefined} bold={isSelected}>
+                  {isSelected ? "▶ " : "  "}
+                </Text>
                 <Text color="yellow">
                   {secret.key.padEnd(25).substring(0, 25)}{" "}
                 </Text>
@@ -308,15 +518,16 @@ const SecretsScreen = ({
       )}
 
       <Text> </Text>
-      <Text color="gray">[c] Create [r] Refresh [q] Back to menu</Text>
+      {error && <Text color="red">⚠️ {error}</Text>}
+      <Text color="gray">[↑↓] Navigate [c] Create [d] Delete (owners only) [r] Refresh [q] Back</Text>
     </Box>
   );
 };
 
 // Main CLI Component
 const App = () => {
-  // Part 1F: Track which screen we're on
-  const [screen, setScreen] = useState<"menu" | "login" | "secrets" | "teams" | "logout">(
+  // Part 1F: Track which screen we're on - Phase 4: Added admin and profile
+  const [screen, setScreen] = useState<"menu" | "login" | "secrets" | "teams" | "admin" | "profile" | "logout">(
     "menu"
   );
 
@@ -342,18 +553,20 @@ const App = () => {
     console.log(`Config stored at: ${getConfigPath()}`);
   }, []); // Run once on startup
 
-  // 2. Menu options (key added to prevent React warning)
+  // 2. Menu options - Phase 4: Added profile and admin options
   const menuItems = user
     ? [
-        { label: "View Secrets", value: "secrets", key: "secrets" },
-        { label: "View Teams", value: "teams", key: "teams" },  // Phase 3D: Teams option
-        { label: "Logout", value: "logout", key: "logout" },
-        { label: "Exit", value: "exit", key: "exit" },
+        { label: "👤 My Profile", value: "profile", key: "profile" },  // Phase 4: Profile
+        { label: "🔐 Secrets", value: "secrets", key: "secrets" },
+        { label: "👥 Teams", value: "teams", key: "teams" },  // Phase 3D: Teams option
+        ...(user.is_admin ? [{ label: "🔑 Admin Panel", value: "admin", key: "admin" }] : []),  // Phase 4: Admin only
+        { label: "🚪 Logout", value: "logout", key: "logout" },
+        { label: "❌ Exit", value: "exit", key: "exit" },
       ]
     : [
-        { label: "Login with GitHub", value: "login", key: "login" },
-        { label: "View Secrets", value: "secrets", key: "secrets" },
-        { label: "Exit", value: "exit", key: "exit" },
+        { label: "🔐 Login with GitHub", value: "login", key: "login" },
+        { label: "📝 View Secrets", value: "secrets", key: "secrets" },
+        { label: "❌ Exit", value: "exit", key: "exit" },
       ];
 
   // 3. Handle menu selection
@@ -379,6 +592,10 @@ const App = () => {
       setScreen("secrets");
     } else if (item.value === "teams") {
       setScreen("teams");  // Phase 3D: Handle teams selection
+    } else if (item.value === "admin") {
+      setScreen("admin");  // Phase 4: Handle admin panel
+    } else if (item.value === "profile") {
+      setScreen("profile");  // Phase 4: Handle profile
     }
   };
 
@@ -509,6 +726,16 @@ const App = () => {
   // Phase 3D: Teams Screen Component
   if (screen === "teams") {
     return <TeamsScreen onBack={() => setScreen("menu")} />;
+  }
+
+  // Phase 4: Admin Panel Screen
+  if (screen === "admin") {
+    return <AdminScreen onBack={() => setScreen("menu")} />;
+  }
+
+  // Phase 4: Profile Screen
+  if (screen === "profile") {
+    return <ProfileScreen onBack={() => setScreen("menu")} />;
   }
 
   if (screen === "logout") {

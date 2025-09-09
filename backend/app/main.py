@@ -1,4 +1,5 @@
 from typing import Optional, List
+import time
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Query, Depends
@@ -398,21 +399,37 @@ async def create_secret(
         "message": "Secret created successfully"
     }
 
-# Phase 2D: Helper endpoint for testing - Get current user info
+# Phase 4C: Enhanced user info endpoint - Get current user with teams and org
 @app.get("/me")
 async def get_current_user_info(
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
 ):
     """
-    Get current user information from JWT token.
-    Useful for testing authentication.
+    Get current user information with organization and teams.
+    Shows complete user profile including admin status and team memberships.
     """
+    # 1. Get user's teams
+    teams = crud.get_user_teams(session, current_user.id)
+    
+    # 2. Get user's organization
+    org = session.get(Organization, current_user.organization_id)
+    
+    # 3. Return comprehensive user info
     return {
-        "id": current_user.id,
-        "email": current_user.email,
-        "name": current_user.name,
-        "organization_id": current_user.organization_id,
-        "is_admin": current_user.is_admin
+        "user": {
+            "id": current_user.id,
+            "email": current_user.email,
+            "name": current_user.name,
+            "is_admin": current_user.is_admin
+        },
+        "organization": {
+            "id": org.id,
+            "name": org.name
+        } if org else None,
+        "teams": [
+            {"id": t.id, "name": t.name} for t in teams
+        ]
     }
 
 @app.get("/secrets/{secret_id}")
@@ -539,13 +556,17 @@ async def create_team_endpoint(
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")
     
-    # 2. Create the team
-    team = crud.create_team(session, name, current_user.organization_id)
+    # 2. Validate team name is not empty
+    if not name or not name.strip():
+        raise HTTPException(status_code=422, detail="Team name cannot be empty")
     
-    # 3. Add creator as first member
+    # 3. Create the team with cleaned name
+    team = crud.create_team(session, name.strip(), current_user.organization_id)
+    
+    # 4. Add creator as first member
     crud.add_team_member(session, team.id, current_user.id)
     
-    # 4. Return created team as dict
+    # 5. Return created team as dict
     return {
         "team": {
             "id": team.id,
@@ -624,3 +645,230 @@ async def list_users(
     
     # 2. Return users list
     return {"users": users}
+
+
+# PHASE 4A: Admin User Management Endpoints
+
+@app.post("/admin/users")
+async def create_user(
+    email: str = Query(..., description="User email"),
+    name: str = Query(..., description="User full name"),
+    is_admin: bool = Query(False, description="Grant admin privileges"),
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    Create a new user (admin only).
+    This allows admins to onboard users without GitHub login.
+    """
+    # 1. Check if current user is admin
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    # 2. Check if email already exists
+    existing = session.exec(select(User).where(User.email == email)).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="User with this email already exists")
+    
+    # 3. Create new user with manual prefix (no GitHub ID yet)
+    new_user = User(
+        email=email,
+        name=name,
+        github_id=f"manual-{email}-{int(time.time())}",  # Unique ID for manual users
+        organization_id=current_user.organization_id,
+        is_admin=is_admin,
+        created_at=datetime.utcnow()
+    )
+    
+    # 4. Save to database
+    session.add(new_user)
+    session.commit()
+    session.refresh(new_user)
+    
+    # 5. Return created user
+    return {
+        "user": {
+            "id": new_user.id,
+            "email": new_user.email,
+            "name": new_user.name,
+            "is_admin": new_user.is_admin
+        },
+        "message": f"User {new_user.name} created successfully"
+    }
+
+@app.put("/admin/users/{user_id}/promote")
+async def promote_to_admin(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    Promote user to admin (admin only).
+    Grants admin privileges to a regular user.
+    """
+    # 1. Check if current user is admin
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    # 2. Find the user to promote
+    user = session.get(User, user_id)
+    if not user or user.organization_id != current_user.organization_id:
+        raise HTTPException(status_code=404, detail="User not found in your organization")
+    
+    # 3. Check if already admin
+    if user.is_admin:
+        return {"message": f"User {user.name} is already an admin"}
+    
+    # 4. Promote to admin
+    user.is_admin = True
+    session.commit()
+    
+    # 5. Return success message
+    return {"message": f"User {user.name} promoted to admin"}
+
+@app.delete("/admin/users/{user_id}")
+async def delete_user(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    Delete a user (admin only).
+    Removes user and all their team memberships.
+    """
+    # 1. Check if current user is admin
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    # 2. Prevent self-deletion
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot delete yourself")
+    
+    # 3. Find the user to delete
+    user = session.get(User, user_id)
+    if not user or user.organization_id != current_user.organization_id:
+        raise HTTPException(status_code=404, detail="User not found in your organization")
+    
+    # 4. Delete user (cascade will handle memberships and ACLs)
+    session.delete(user)
+    session.commit()
+    
+    # 5. Return success message
+    return {"message": f"User {user.name} deleted successfully"}
+
+@app.delete("/admin/teams/{team_id}")
+async def delete_team(
+    team_id: int,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    Delete a team (admin only).
+    Removes team and all memberships.
+    """
+    # 1. Check if current user is admin
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    # 2. Find the team to delete
+    team = session.get(Team, team_id)
+    if not team or team.organization_id != current_user.organization_id:
+        raise HTTPException(status_code=404, detail="Team not found in your organization")
+    
+    # 3. Delete related records first (memberships and ACL entries)
+    # Delete all team memberships
+    stmt = select(TeamMembership).where(TeamMembership.team_id == team_id)
+    memberships = session.exec(stmt).all()
+    for membership in memberships:
+        session.delete(membership)
+    
+    # Delete all ACL entries for this team
+    stmt = select(ACL).where(ACL.subject_type == "team", ACL.subject_id == team_id)
+    acl_entries = session.exec(stmt).all()
+    for acl in acl_entries:
+        session.delete(acl)
+    
+    # 4. Now delete the team
+    session.delete(team)
+    session.commit()
+    
+    # 5. Return success message
+    return {"message": f"Team {team.name} deleted successfully"}
+
+@app.delete("/teams/{team_id}/members/{user_id}")
+async def remove_team_member(
+    team_id: int,
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    Remove user from team (admin only).
+    Removes a team membership.
+    """
+    # 1. Check if current user is admin
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    # 2. Find the membership to remove
+    stmt = select(TeamMembership).where(
+        TeamMembership.team_id == team_id,
+        TeamMembership.user_id == user_id
+    )
+    membership = session.exec(stmt).first()
+    
+    # 3. Check if membership exists
+    if not membership:
+        raise HTTPException(status_code=404, detail="User is not a member of this team")
+    
+    # 4. Verify team is in user's org
+    team = session.get(Team, team_id)
+    if not team or team.organization_id != current_user.organization_id:
+        raise HTTPException(status_code=404, detail="Team not found in your organization")
+    
+    # 5. Remove membership
+    session.delete(membership)
+    session.commit()
+    
+    # 6. Return success message
+    user = session.get(User, user_id)
+    return {"message": f"User {user.name if user else 'unknown'} removed from team {team.name}"}
+
+
+# PHASE 4B: Secret Management Endpoints (Delete)
+
+@app.delete("/secrets/{secret_id}")
+async def delete_secret(
+    secret_id: int,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    Delete a secret (creator or admin only).
+    Only the creator or an admin can delete secrets.
+    """
+    # 1. Find the secret
+    secret = session.get(Secret, secret_id)
+    if not secret:
+        raise HTTPException(status_code=404, detail="Secret not found")
+    
+    # 2. Check if secret is in user's organization
+    if secret.organization_id != current_user.organization_id:
+        raise HTTPException(status_code=404, detail="Secret not found")
+    
+    # 3. Check permission: only creator or admin can delete
+    if secret.created_by_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Only creator or admin can delete this secret")
+    
+    # 4. Delete all ACL entries for this secret first
+    stmt = select(ACL).where(ACL.secret_id == secret_id)
+    acl_entries = session.exec(stmt).all()
+    for acl in acl_entries:
+        session.delete(acl)
+    
+    # 5. Now delete the secret
+    session.delete(secret)
+    session.commit()
+    
+    # 6. Return success message
+    return {"message": f"Secret '{secret.key}' deleted successfully"}
