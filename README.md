@@ -1,7 +1,5 @@
 # SecretShare
 
-Product Engineer Take Home Assignment implementation: A secret sharing system with CLI and backend web server.
-
 ## Assignment Requirements
 
 Secret sharing system with:
